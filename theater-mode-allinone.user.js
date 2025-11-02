@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name        All-in-One Theater Mode (YouTube, Twitch, Kick) - AUTO FIX
-// @namespace   CustomScript/TheaterMode/Fix
-// @description Wymusza Tryb Kinowy (Theater Mode) na YouTube, Twitch i Kick po aktualizacji selektorów.
+// @name        All-in-One Theater Mode (YouTube, Twitch, Kick) - FINAL FIX
+// @namespace   CustomScript/TheaterMode/FinalFix
+// @description Wymusza Tryb Kinowy (Theater Mode) na YouTube, Twitch i Kick, używając precyzyjnych atrybutów.
 // @include     https://www.youtube.com/*
 // @match       https://www.twitch.tv/*
 // @match       https://kick.com/*
-// @version     3.0.0
+// @version     4.0.0
 // @grant       none
 // @run-at      document-start
 // @license     MIT
@@ -14,95 +14,77 @@
 (function() {
     'use strict';
 
-    // Helper do dodawania stylów
-    function addStyle(styleString) {
-        const style = document.createElement('style');
-        style.textContent = styleString;
-        document.head.append(style);
-    }
+    // Helper do aktywacji po znalezieniu elementu
+    const waitForElement = (selector, callback) => {
+        const obs = new MutationObserver((mutations, observer) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                observer.disconnect();
+                callback(element);
+            }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+    };
 
     // ===================================
-    // 1. KICK (Naprawiono: Uproszczone style i wczesna aktywacja)
+    // 1. KICK (Aktywacja przez Kliknięcie Przycisku)
     // ===================================
     if (window.location.host === 'kick.com') {
-        
-        // Dodajemy style niezbędne do Trybu Kinowego na Kick (używając bardziej ogólnych selektorów)
-        addStyle(`
-            /* 1. Ukrycie paska nawigacji i sidebar'a */
-            nav[role="navigation"], .sidebar {
-                display: none !important;
-            }
-            /* 2. Rozciągnięcie playera na całą wysokość widoku */
-            /* Zastępujemy to, co kontroluje układ strony */
-            .relative.overflow-hidden,
-            main.justify-center.w-full,
-            #main-content {
-                height: 100vh !important;
-                max-height: 100vh !important;
-                min-height: 100vh !important;
-            }
-            /* 3. Upewnienie się, że sam player zajmuje całą dostępną przestrzeń */
-            div[id^="vjs_video"] {
-                height: 100vh !important; 
-                width: 100% !important;
-            }
-        `);
-
-        // W przypadku Kick wystarczy sam CSS + natychmiastowe załadowanie.
-        // Skoro @run-at document-start już dodaje CSS, Tryb Kinowy powinien się aktywować natychmiast.
-        // Nie potrzebujemy skomplikowanego observera, jeśli style są wystarczająco silne.
-        console.log('Kick: Automatyczny Tryb Kinowy aktywowany za pomocą CSS.');
-    }
-
-    // ===================================
-    // 2. TWITCH (Naprawiono: Wykorzystanie nowoczesnego atrybutu "mode")
-    // ===================================
-    else if (window.location.host === 'www.twitch.tv') {
-        
-        // Na nowoczesnym Twitchu włączanie trybu kinowego to zmiana atrybutu 'data-a-player-state' na głównym kontenerze.
-        // Najbezpieczniejsza metoda to kliknięcie przycisku, ale użyjemy też MutationObserver.
-        
-        const activateTwitchTheaterMode = () => {
-            const theaterButton = document.querySelector('button[data-a-target="player-theatre-mode-button"]');
-
+        // Kick teraz ma swój przycisk trybu kinowego. Znajdujemy go po ikonie.
+        const activateKickTheaterMode = () => {
+            // Przycisk trybu kinowego na Kick - znajduje przycisk zawierający odpowiednią ikonę SVG
+            const theaterButton = document.querySelector('button[aria-label="Tryb kinowy"]');
+            
             if (theaterButton) {
-                // Sprawdzamy, czy player jest w trybie normalnym, zanim klikniemy
-                const playerContainer = document.querySelector('.video-player__container');
-                const isTheaterMode = playerContainer && playerContainer.getAttribute('data-a-player-mode') === 'theatre';
+                // Sprawdzamy stan: Tryb Kinowy jest aktywny, gdy body ma atrybut data-theatre="true"
+                const isTheaterActive = document.body.getAttribute('data-theatre') === 'true';
 
-                if (!isTheaterMode) {
+                if (!isTheaterActive) {
                     theaterButton.click();
-                    console.log('Twitch: Wymuszono kliknięcie przycisku Theater Mode.');
+                    console.log('Kick: Wymuszono kliknięcie przycisku Tryb Kinowy.');
                     return true;
                 }
             }
             return false;
         };
+        
+        // Czekamy na załadowanie przycisku i próbujemy kliknąć
+        waitForElement('button[aria-label="Tryb kinowy"]', activateKickTheaterMode);
+        
+        // Czasem przy nawigacji SPA musimy powtórzyć
+        window.addEventListener('popstate', () => setTimeout(activateKickTheaterMode, 500));
+        
+    }
 
-        // MutationObserver - czeka na załadowanie przycisku
-        const observer = new MutationObserver((mutations, obs) => {
-            if (activateTwitchTheaterMode()) {
-                // Skrypt aktywowany. Czekamy teraz tylko na nawigację SPA (zmiana kanału).
-                obs.disconnect(); 
+    // ===================================
+    // 2. TWITCH (Aktywacja przez Kliknięcie Przycisku)
+    // ===================================
+    else if (window.location.host === 'www.twitch.tv') {
+        
+        const activateTwitchTheaterMode = (button) => {
+            const playerContainer = document.querySelector('[data-a-player-mode]');
+            // Sprawdzamy, czy player jest w trybie innym niż 'theatre'
+            const isTheaterMode = playerContainer && playerContainer.getAttribute('data-a-player-mode') === 'theatre';
+
+            if (!isTheaterMode) {
+                button.click();
+                console.log('Twitch: Wymuszono kliknięcie przycisku Theatre Mode.');
+                return true;
             }
-        });
-        
-        const startObserver = () => {
-             observer.observe(document.body, { childList: true, subtree: true });
+            return false;
+        };
+
+        // Czekamy na załadowanie przycisku używając jego niezawodnego atrybutu ARIA
+        const startTwitchObserver = () => {
+             // Używamy aria-label, który jest stały, mimo dynamicznych klas CSS
+            waitForElement('button[aria-label^="Theatre Mode"]', activateTwitchTheaterMode);
         };
         
-        startObserver();
-
-        // Obsługa nawigacji SPA (Single Page Application) na Twitchu
-        window.addEventListener('popstate', startObserver);
-        window.addEventListener('hashchange', startObserver);
-
-        // Dodatkowa obsługa, bo Twitch ma specyficzną nawigację
-        const originalPushState = history.pushState;
-        history.pushState = function() {
-            originalPushState.apply(history, arguments);
-            startObserver();
-        };
+        // Obsługa nawigacji SPA
+        window.addEventListener('popstate', () => setTimeout(startTwitchObserver, 500));
+        window.addEventListener('hashchange', () => setTimeout(startTwitchObserver, 500));
+        
+        startTwitchObserver();
     }
 
     // ===================================
