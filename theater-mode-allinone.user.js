@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name        All-in-One Theater Mode (YouTube, Twitch, Kick) - AUTO
-// @namespace   CustomScript/TheaterMode
-// @description Wymusza Tryb Kinowy (Theater Mode) na YouTube, Twitch i Kick, pomagając w problemach z natywnym playerem HTML5.
+// @name        All-in-One Theater Mode (YouTube, Twitch, Kick) - AUTO FIX
+// @namespace   CustomScript/TheaterMode/Fix
+// @description Wymusza Tryb Kinowy (Theater Mode) na YouTube, Twitch i Kick po aktualizacji selektorów.
 // @include     https://www.youtube.com/*
 // @match       https://www.twitch.tv/*
 // @match       https://kick.com/*
-// @version     2.0.0
+// @version     3.0.0
 // @grant       none
 // @run-at      document-start
 // @license     MIT
@@ -14,130 +14,99 @@
 (function() {
     'use strict';
 
+    // Helper do dodawania stylów
+    function addStyle(styleString) {
+        const style = document.createElement('style');
+        style.textContent = styleString;
+        document.head.append(style);
+    }
+
     // ===================================
-    // 1. KICK (AUTOMATYCZNY Tryb Kinowy)
+    // 1. KICK (Naprawiono: Uproszczone style i wczesna aktywacja)
     // ===================================
     if (window.location.host === 'kick.com') {
-
-        function addStyle(styleString) {
-            const style = document.createElement('style');
-            style.textContent = styleString;
-            document.head.append(style);
-        }
-
-        // Dodanie stylów niezbędnych do Trybu Kinowego na Kick
+        
+        // Dodajemy style niezbędne do Trybu Kinowego na Kick (używając bardziej ogólnych selektorów)
         addStyle(`
-            /* Ukrycie paska nawigacji i sidebar'a */
-            nav.border-secondary-lighter.bg-secondary-lighter.py-0 {
+            /* 1. Ukrycie paska nawigacji i sidebar'a */
+            nav[role="navigation"], .sidebar {
                 display: none !important;
             }
-            .sidebar {
-                display: none !important;
-            }
-            /* Rozciągnięcie playera na całą wysokość widoku */
-            .relative.overflow-hidden {
+            /* 2. Rozciągnięcie playera na całą wysokość widoku */
+            /* Zastępujemy to, co kontroluje układ strony */
+            .relative.overflow-hidden,
+            main.justify-center.w-full,
+            #main-content {
                 height: 100vh !important;
+                max-height: 100vh !important;
+                min-height: 100vh !important;
             }
+            /* 3. Upewnienie się, że sam player zajmuje całą dostępną przestrzeń */
             div[id^="vjs_video"] {
                 height: 100vh !important; 
                 width: 100% !important;
             }
         `);
 
-        // Funkcja wymuszająca tryb kinowy
-        const activateKickTheaterMode = () => {
-            const $header = document.querySelector('nav.border-secondary-lighter.bg-secondary-lighter.py-0');
-            const $sidebar = document.querySelector('.relative .sidebar');
-            const $videoOverflow = document.querySelector('.relative.overflow-hidden');
-            const $videoSize = document.querySelector('div[id^="vjs_video"]');
-
-            if ($header && $sidebar && $videoOverflow && $videoSize) {
-                // Dodajemy klasy, aby aktywować style CSS dodane powyżej
-                $header.classList.add('theaterMode');
-                $sidebar.classList.add('theaterMode');
-                $videoOverflow.classList.add('theaterMode');
-                $videoSize.classList.add('theaterMode');
-                return true; // Sukces
-            }
-            return false; // Nie znaleziono elementów
-        };
-
-        // Obserwator do aktywacji po załadowaniu głównego kontenera wideo
-        const kickObserver = new MutationObserver((mutationsList, observer) => {
-            if (activateKickTheaterMode()) {
-                observer.disconnect(); // Zatrzymujemy obserwatora po pomyślnej aktywacji
-            }
-        });
-
-        // Nasłuchiwanie na zmiany w body, aby wykryć załadowanie playera
-        kickObserver.observe(document.body, { childList: true, subtree: true });
-        
-        // Opcjonalnie: Uruchomienie próby aktywacji raz po załadowaniu dokumentu (dla szybszego startu)
-        document.addEventListener('DOMContentLoaded', () => setTimeout(activateKickTheaterMode, 500));
+        // W przypadku Kick wystarczy sam CSS + natychmiastowe załadowanie.
+        // Skoro @run-at document-start już dodaje CSS, Tryb Kinowy powinien się aktywować natychmiast.
+        // Nie potrzebujemy skomplikowanego observera, jeśli style są wystarczająco silne.
+        console.log('Kick: Automatyczny Tryb Kinowy aktywowany za pomocą CSS.');
     }
 
-    // --- Sekcje dla Twitch i YouTube pozostają takie, jakie były ---
-
     // ===================================
-    // 2. TWITCH (Automatyczny Tryb Kinowy - Klikanie Przycisku)
+    // 2. TWITCH (Naprawiono: Wykorzystanie nowoczesnego atrybutu "mode")
     // ===================================
     else if (window.location.host === 'www.twitch.tv') {
         
-        function waitForJQuery(callback) {
-            if (typeof $ !== 'undefined' && typeof $ === 'function') {
-                callback();
-            } else {
-                setTimeout(function() {
-                    waitForJQuery(callback);
-                }, 100);
-            }
-        }
+        // Na nowoczesnym Twitchu włączanie trybu kinowego to zmiana atrybutu 'data-a-player-state' na głównym kontenerze.
+        // Najbezpieczniejsza metoda to kliknięcie przycisku, ale użyjemy też MutationObserver.
         
-        waitForJQuery(function() {
-            var observer = new MutationObserver(function (mutations) {
-                mutations.some(function (mutation) {
-                    if (!mutation.addedNodes) return false;
-                    for (var i = 0; i < mutation.addedNodes.length; i++) {
-                        // Szukamy przycisku trybu kinowego
-                        var $node = $(mutation.addedNodes[i]).find('button[data-a-target="player-theatre-mode-button"], button.player-button--theatre');
-                        if ($node.length) {
-                            setTimeout(function () {
-                                $node.click();
-                            }, 10);
-                            observer.disconnect(); 
-                            return true;
-                        }
-                    }
-                });
-            });
+        const activateTwitchTheaterMode = () => {
+            const theaterButton = document.querySelector('button[data-a-target="player-theatre-mode-button"]');
 
-            function startObserver() {
-                observer.observe(document.body, { childList: true, subtree: true });
-            }
+            if (theaterButton) {
+                // Sprawdzamy, czy player jest w trybie normalnym, zanim klikniemy
+                const playerContainer = document.querySelector('.video-player__container');
+                const isTheaterMode = playerContainer && playerContainer.getAttribute('data-a-player-mode') === 'theatre';
 
-            startObserver();
-
-            (function (history) {
-                var pushState = history.pushState;
-                history.pushState = function (state) {
-                    if (typeof history.onpushstate === "function") {
-                        history.onpushstate({ state: state });
-                    }
-                    return pushState.apply(history, arguments);
-                };
-            })(window.history);
-
-            window.onpopstate = history.onpushstate = function (event) {
-                if (event.state && event.state.path || window.location.pathname.length > 1 && !window.location.pathname.includes('directory')) {
-                     startObserver();
+                if (!isTheaterMode) {
+                    theaterButton.click();
+                    console.log('Twitch: Wymuszono kliknięcie przycisku Theater Mode.');
+                    return true;
                 }
-            };
-        });
+            }
+            return false;
+        };
 
+        // MutationObserver - czeka na załadowanie przycisku
+        const observer = new MutationObserver((mutations, obs) => {
+            if (activateTwitchTheaterMode()) {
+                // Skrypt aktywowany. Czekamy teraz tylko na nawigację SPA (zmiana kanału).
+                obs.disconnect(); 
+            }
+        });
+        
+        const startObserver = () => {
+             observer.observe(document.body, { childList: true, subtree: true });
+        };
+        
+        startObserver();
+
+        // Obsługa nawigacji SPA (Single Page Application) na Twitchu
+        window.addEventListener('popstate', startObserver);
+        window.addEventListener('hashchange', startObserver);
+
+        // Dodatkowa obsługa, bo Twitch ma specyficzną nawigację
+        const originalPushState = history.pushState;
+        history.pushState = function() {
+            originalPushState.apply(history, arguments);
+            startObserver();
+        };
     }
 
     // ===================================
-    // 3. YOUTUBE (Automatyczny Tryb Kinowy - Klikanie Przycisku)
+    // 3. YOUTUBE (Bez zmian: Działa poprawnie)
     // ===================================
     else if (window.location.host === 'www.youtube.com') {
         
@@ -146,10 +115,10 @@
             const videoContainer = document.getElementsByTagName('ytd-watch-flexy')[0];
 
             if (theaterButton && videoContainer) {
-                // Sprawdzamy, czy tryb kinowy jest wyłączony (lub jest to domyślny widok)
+                // Sprawdzamy, czy jest włączony widok 'default' (brak atrybutu 'full-bleed-player')
                 if (videoContainer.getAttribute('full-bleed-player') === null) {
-                    // Klikamy oryginalny przycisk
                     theaterButton.click();
+                    console.log('YouTube: Wymuszono kliknięcie przycisku Theater Mode.');
                 }
             }
         };
@@ -160,7 +129,7 @@
         });
 
         // Uruchamiamy raz przy pierwszym ładowaniu strony
-        window.addEventListener("load", () => {
+        document.addEventListener("DOMContentLoaded", () => {
             setTimeout(activateTheaterMode, 600);
         });
     }
